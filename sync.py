@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import base64
 import hashlib
 import queue
 import sys
@@ -58,11 +59,14 @@ def main():
             print("Checking", md5sum_list)
             result = piwigo_site.pwg.images.exist(md5sum_list=",".join(md5sum_list))
             for item in items:
+                filename = item[0].original_filename
+                if filename is None:
+                    filename = item[0].filename
                 if result[item[2]] is None:
-                    print("Need to upload: {}".format(item[0].original_filename))
+                    print("Need to upload: {}".format(filename))
                     upload_queue.put(item)
                 else:
-                    print("Already uploaded: {}".format(item[0].original_filename))
+                    print("Already uploaded: {}".format(filename))
                 check_queue.task_done()
 
     def upload_photo():
@@ -74,7 +78,6 @@ def main():
             name = photo.title
             if name is None:
                 pass
-            print("Upload {} as {}".format(path, filename))
             try:
                 data = open(path, "rb").read()
                 chunks = []
@@ -84,9 +87,9 @@ def main():
                     data = data[chunk_size:]
 
                 for i, chunk in enumerate(chunks):
-                    print("Uploading chunk {} of {}".format(i, path))
+                    print("Uploading chunk {} of {}".format(i, filename))
                     piwigo_site.pwg.images.addChunk(
-                            data=chunk,
+                            data=base64.b64encode(chunk),
                             original_sum=md5,
                             type="file",
                             position=i)
@@ -95,19 +98,21 @@ def main():
                 piwigo_site.pwg.images.add(original_sum=md5, categories="1",
                         original_filename=filename)
             except Exception as e:
-                print("Error uploading {}: {}".format(path, e))
+                print("Error uploading {}: {}".format(filename, e))
             upload_queue.task_done()
 
     hash_thread = threading.Thread(target=hash_photo, daemon=True)
     hash_thread.start()
     check_thread = threading.Thread(target=check_photo, daemon=True)
     check_thread.start()
-    upload_thread = threading.Thread(target=upload_photo, daemon=True)
-    upload_thread.start()
+    upload_threads = []
+    for i in range(10):
+        t = threading.Thread(target=upload_photo, daemon=True)
+        t.start()
+        upload_threads.append(t)
 
     # Uploading photos.
     print("Uploading photos")
-    i = 0
     for photo in photosdb.photos(images=True, movies=False):
         if photo.ismissing:
             continue
@@ -116,9 +121,7 @@ def main():
 
         if photo.path_edited is not None:
             hash_queue.put((photo, photo.path_edited))
-        i += 1
-        if i >= 10:
-            break
+
     print("Done loading photos")
         
     hash_queue.join()
