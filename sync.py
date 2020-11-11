@@ -10,8 +10,17 @@ import threading
 import osxphotos
 import piwigo
 
-def upload_thread():
-    pass
+def print_category(category, indent=""):
+    print("{}{}".format(indent, category["name"]))
+    for key, val in category.items():
+        if key == "sub_categories":
+            print("{}  {}:".format(indent, key))
+            for c in val:
+                print_category(c, indent + "  ")
+        elif key == "name":
+            continue
+        else:
+            print("{}  {}: {}".format(indent, key, val))
 
 def main():
     parser = argparse.ArgumentParser()
@@ -26,6 +35,10 @@ def main():
     print("Piwigo server version: {}".format(piwigo_site.pwg.getVersion()))
     piwigo_site.pwg.session.login(username=args.piwigo_user,
             password=args.piwigo_password)
+
+    for category in piwigo_site.pwg.categories.getList(recursive=True, tree_output=True):
+        print(repr(category))
+        print_category(category)
 
     print("Loading iPhoto library")
     skip_folders = { "iPhoto Events" }
