@@ -66,11 +66,11 @@ def main():
     # For each iphoto album that doesn't exist on piwigo, create it.
     def create_album(path):
         print("Create album on piwigo:", path)
-        parent = (*path[:-1],)
-        parents = [piwigo_album_map[parent]]
+        parents = path[:-1]
         name = path[-1]
         if len(parents) > 0:
-            result = piwigo_site.pwg.categories.add(name=name, parents=parents)
+            result = piwigo_site.pwg.categories.add(name=name, parent=
+                    piwigo_album_map[(*parents,)])
         else:
             result = piwigo_site.pwg.categories.add(name=name)
         print("Album created", path, "with id", result["id"])
