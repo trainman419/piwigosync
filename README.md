@@ -11,7 +11,7 @@ pip install -r requirements3.txt
 ## Run
 
 ```
-./sync.py
+./sync.py --piwigo-password=[yourpassword]
 ```
 
 ## Compatibility
