@@ -98,8 +98,8 @@ def main():
                     print("Need to upload: {}".format(filename))
                     upload_queue.put(item)
                 else:
-                    print("Already uploaded: {}".format(filename))
-                    album_queue.put((item[0], item[2]))
+                    print("Already uploaded: {}, {}".format(filename, result[item[2]]))
+                    album_queue.put((item[0], item[2], result[item[2]]))
                 check_queue.task_done()
 
     def upload_photo():
@@ -128,31 +128,54 @@ def main():
                             position=i)
 
                 print("Final add: {} as {}".format(path, filename))
-                piwigo_site.pwg.images.add(original_sum=md5, categories="1",
+                add_result = piwigo_site.pwg.images.add(original_sum=md5, categories="1",
                         original_filename=filename)
-                album_queue.put((photo, md5))
+                print("ADD RESULT: ", add_result)
+                break
+                #album_queue.put((photo, md5))
             except Exception as e:
                 print("Error uploading {}: {}".format(filename, e))
             upload_queue.task_done()
 
     def set_albums():
         # For each iphoto album that doesn't exist on piwigo, create it.
-        # TODO
         print(piwigo_album_map)
         print(iphoto_album_map)
+
+        def create_album(path):
+            print("Create album on piwigo:", path)
+            parents = path[:-1]
+            name = path[-1]
+            if len(parents) > 0:
+                result = piwigo_site.pwg.categories.add(name=name, parents=parents)
+            else:
+                result = piwigo_site.pwg.categories.add(name=name)
+            print("Album created", path, "with id", result["id"])
+            return result["id"]
+
         for uuid, path in iphoto_album_map.items():
             if path not in piwigo_album_map:
-                print("Create album on piwigo", path)
+                for l in range(1, len(path)):
+                    parents = path[:l]
+                    if not parents in piwigo_album_map:
+                        piwigo_album_map[parents] = create_album(parents)
+                piwigo_album_map[path] = create_album(path)
 
         # For each photo in the album queue, pull the photo info from piwigo and update which
         # albums it is part of.
         while True:
-            photo, md5 = album_queue.get()
-            # TODO: get the photo from piwigo, compare and update albums on piwigo
+            photo, md5, image_id = album_queue.get()
+            categories = []
             for album_info in photo.album_info:
                 if album_info.uuid in iphoto_album_map:
+                    album = iphoto_album_map[album_info.uuid]
+                    if album in piwigo_album_map:
+                        categories.append(piwigo_album_map[album])
                     print(md5)
                     print(iphoto_album_map[album_info.uuid])
+            if len(categories) > 0:
+                print("Set categories {} for md5 {} and id {}", categories, md5, id)
+                piwigo_site.pwg.images.setInfo(image_id=image_id, categories=categories)
             album_queue.task_done()
 
     hash_thread = threading.Thread(target=hash_photo, daemon=True)
@@ -187,6 +210,8 @@ def main():
     print("Done checking for photos")
     upload_queue.join()
     print("Done uploading photos")
+    album_queue.join()
+    print("Done updating album info")
 
 if __name__ == '__main__':
     sys.exit(main())
