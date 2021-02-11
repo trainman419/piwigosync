@@ -22,6 +22,15 @@ def print_category(category, indent=""):
         else:
             print("{}  {}: {}".format(indent, key, val))
 
+
+def get_piwigo_album_map(category, path=()):
+    path = (*path, category["name"])
+    album_map = {path: category["id"]}
+    for sub_category in category.get("sub_categories", []):
+        album_map.update(get_piwigo_album_map(sub_category, path))
+    return album_map
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--piwigo", default="http://arg:8000")
@@ -36,22 +45,32 @@ def main():
     piwigo_site.pwg.session.login(username=args.piwigo_user,
             password=args.piwigo_password)
 
+    piwigo_album_map = {}
     for category in piwigo_site.pwg.categories.getList(recursive=True, tree_output=True):
-        print(repr(category))
-        print_category(category)
+        piwigo_album_map.update(get_piwigo_album_map(category))
+    print(piwigo_album_map)
 
     print("Loading iPhoto library")
     skip_folders = { "iPhoto Events" }
     photosdb = osxphotos.PhotosDB()
 
+    iphoto_album_map = {}
+    for album in photosdb.album_info:
+        if len(album.folder_names) > 0 and album.folder_names[0] in skip_folders:
+            continue
+
+        iphoto_album_map[album.uuid] = (*album.folder_names, album.title)
+
+    print(iphoto_album_map)
+
     hash_queue = queue.Queue()
     check_queue = queue.Queue()
     upload_queue = queue.Queue()
+    album_queue = queue.Queue()
 
     def hash_photo():
         while True:
             photo, path = hash_queue.get()
-            #print("Hash: {}".format(path))
             try:
                 md5 = hashlib.md5(open(path, "rb").read()).hexdigest()
                 check_queue.put((photo, path, md5))
@@ -80,6 +99,7 @@ def main():
                     upload_queue.put(item)
                 else:
                     print("Already uploaded: {}".format(filename))
+                    album_queue.put((item[0], item[2]))
                 check_queue.task_done()
 
     def upload_photo():
@@ -110,9 +130,28 @@ def main():
                 print("Final add: {} as {}".format(path, filename))
                 piwigo_site.pwg.images.add(original_sum=md5, categories="1",
                         original_filename=filename)
+                album_queue.put((photo, md5))
             except Exception as e:
                 print("Error uploading {}: {}".format(filename, e))
             upload_queue.task_done()
+
+    def set_albums():
+        # For each iphoto album that doesn't exist on piwigo, create it.
+        # TODO
+        print(piwigo_album_map)
+        print(iphoto_album_map)
+
+        # For each photo in the album queue, pull the photo info from piwigo and update which
+        # albums it is part of.
+        while True:
+            photo, md5 = album_queue.get()
+            # TODO: get the photo from piwigo, compare and update albums on piwigo
+            for album_info in photo.album_info:
+                if album_info.uuid in iphoto_album_map:
+                    print(photo)
+                    print(album_info)
+                    print(iphoto_album_map[album_info.uuid])
+            album_queue.task_done()
 
     hash_thread = threading.Thread(target=hash_photo, daemon=True)
     hash_thread.start()
@@ -123,6 +162,9 @@ def main():
         t = threading.Thread(target=upload_photo, daemon=True)
         t.start()
         upload_threads.append(t)
+
+    album_thread = threading.Thread(target=set_albums, daemon=True)
+    album_thread.start()
 
     # Uploading photos.
     print("Uploading photos")
@@ -136,7 +178,7 @@ def main():
             hash_queue.put((photo, photo.path_edited))
 
     print("Done loading photos")
-        
+
     hash_queue.join()
     print("Done hashing")
     check_queue.join()
