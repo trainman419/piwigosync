@@ -140,6 +140,9 @@ def main():
         # TODO
         print(piwigo_album_map)
         print(iphoto_album_map)
+        for uuid, path in iphoto_album_map.items():
+            if path not in piwigo_album_map:
+                print("Create album on piwigo", path)
 
         # For each photo in the album queue, pull the photo info from piwigo and update which
         # albums it is part of.
@@ -148,8 +151,7 @@ def main():
             # TODO: get the photo from piwigo, compare and update albums on piwigo
             for album_info in photo.album_info:
                 if album_info.uuid in iphoto_album_map:
-                    print(photo)
-                    print(album_info)
+                    print(md5)
                     print(iphoto_album_map[album_info.uuid])
             album_queue.task_done()
 
