@@ -109,6 +109,9 @@ def main():
                     items.append(i)
                 except queue.Empty:
                     break
+                # Limit number of items to avoid maximum URL length limit
+                if len(items) >= 100:
+                    break
             md5sum_list = [i[2] for i in items]
             print("Checking", md5sum_list)
             result = piwigo_site.pwg.images.exist(md5sum_list=",".join(md5sum_list))
@@ -152,9 +155,7 @@ def main():
                 print("Final add: {} as {}".format(path, filename))
                 add_result = piwigo_site.pwg.images.add(original_sum=md5, categories="1",
                         original_filename=filename)
-                print("ADD RESULT: ", add_result)
-                break
-                #album_queue.put((photo, md5))
+                album_queue.put((photo, md5, add_result["image_id"]))
             except Exception as e:
                 print("Error uploading {}: {}".format(filename, e))
             upload_queue.task_done()
